@@ -28,6 +28,9 @@ functions:
           path: '/{param}'
           method: GET
 
+    layers:
+      - Ref: PythonRequirementsLambdaLayer
+
 custom:
   customDomain:
     domainName: url-shortener.kellenanker.com
@@ -42,9 +45,8 @@ custom:
     apiType: http
 
   pythonRequirements:
-    zip: true
-    dockerizePip: non-linux
+    layer: true
 
 plugins:
-  # - serverless-python-requirements
+  - serverless-python-requirements
   - serverless-domain-manager

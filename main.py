@@ -1,8 +1,3 @@
-# try:
-#     import unzip_requirements
-# except ImportError:
-#     pass
-
 import logging
 
 from aws_lambda_powertools.logging import Logger
@@ -21,13 +16,16 @@ from aws_lambda_powertools.event_handler.exceptions import (
 
 
 logger = Logger(level=logging.INFO)
-app = ApiGatewayResolver(proxy_type=ProxyEventType.APIGatewayProyEventV2)
+app = ApiGatewayResolver(proxy_type=ProxyEventType.APIGatewayProxyEventV2)
 
 
 @app.get("/<short_url>")
 def do_stuff(short_url):
     return Response(
-        status_code=302, body="redirecting...", headers={Location: "https://google.com"}
+        status_code=302,
+        body="redirecting...",
+        content_type="text/plain",
+        headers={"Location": "https://google.com"},
     )
 
 
