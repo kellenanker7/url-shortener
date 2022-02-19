@@ -1,0 +1,11 @@
+{
+  "name": "url-shortener",
+  "version": "1.0.0",
+  "devDependencies": {
+  	"serverless-python-requirements": "^5.1.1",
+  	"serverless-domain-manager": "^5.1.0"
+  },
+  "dependencies": {
+  	"sls": "^0.1.0"
+  }
+}
