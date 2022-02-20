@@ -19,19 +19,17 @@ logger = Logger(level=logging.INFO)
 app = ApiGatewayResolver(proxy_type=ProxyEventType.APIGatewayProxyEventV2)
 
 
-@app.get("/<short_url>")
-def do_stuff(short_url):
+@app.get("/<id>")
+def redirect(id):
+    long_url = "https://google.com" # Look up real URL in DB based on short URL
+
+    # Simple redirect to real URL
     return Response(
         status_code=302,
         body="redirecting...",
         content_type="text/plain",
-        headers={"Location": "https://google.com"},
+        headers={"Location": long_url},
     )
-
-
-@app.get("/status")
-def status():
-    return status({"status": "All good"})
 
 
 def api_handler(event, context):

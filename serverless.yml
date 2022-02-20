@@ -33,7 +33,7 @@ functions:
 
 custom:
   customDomain:
-    domainName: url-shortener.kellenanker.com
+    domainName: short.kellenanker.com
     basePath: ''
     stage: live
     createRoute53Record: true
