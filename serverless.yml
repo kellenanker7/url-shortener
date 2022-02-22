@@ -7,6 +7,21 @@ provider:
   runtime: python3.9
   stage: live
   region: us-east-1
+  logs:
+    httpApi: true
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Scan
+            - dynamodb:Describe*
+            - dynamodb:List*
+            - dynamodb:GetItem*
+            - dynamodb:PutItem*
+          Resource:
+            - !GetAtt UrlTable.Arn
 
 package:
   patterns:
@@ -25,7 +40,10 @@ functions:
           path: '/status'
           method: GET
       - httpApi:
-          path: '/{param}'
+          path: '/shorten'
+          method: GET
+      - httpApi:
+          path: '/s/{param}'
           method: GET
 
     layers:
@@ -50,3 +68,22 @@ custom:
 plugins:
   - serverless-python-requirements
   - serverless-domain-manager
+
+resources:
+  Resources:
+    UrlTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: url-shortener
+        AttributeDefinitions:
+          - AttributeName: ShortUrlId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: ShortUrlId
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TimeToLiveSpecification:
+          AttributeName: TTL
+          Enabled: true
