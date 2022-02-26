@@ -36,9 +36,14 @@ functions:
 
     environment:
       PYTHONHASHSEED: 0
+      DOMAIN_NAME: "${self:custom.customDomain.domainName}"
 
     events:
       # Shorten
+      - httpApi:
+          path: '/'
+          method: POST
+      # Metrics
       - httpApi:
           path: '/'
           method: GET
@@ -87,4 +92,4 @@ resources:
           WriteCapacityUnits: 1
         TimeToLiveSpecification:
           AttributeName: TTL
-          Enabled: true
+          Enabled: False
