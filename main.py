@@ -4,6 +4,7 @@ import json
 import sys
 import os
 
+from botocore.exceptions import ClientError
 from aws_lambda_powertools.logging import Logger
 from aws_lambda_powertools.event_handler.api_gateway import (
     ApiGatewayResolver,
@@ -14,7 +15,6 @@ from aws_lambda_powertools.event_handler.exceptions import (
     BadRequestError,
     InternalServerError,
     NotFoundError,
-    ServiceError,
 )
 
 
@@ -26,15 +26,13 @@ table = dynamodb.Table("url-shortener")
 
 domain_name = os.environ.get("DOMAIN_NAME")
 chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+base = len(chars)
 
-
-def base62encode(db_id):
+def encode(value):
     suid = ""
-
-    # find corresponding base 62 value for each digit
-    while db_id > 0:
-        suid += chars[db_id % 62]
-        db_id //= 62
+    while value > 0:
+        suid += chars[value % base]
+        value //= base
 
     return suid
 
@@ -55,41 +53,58 @@ def shorten():
         logger.warning("No protocol found in 'longUrl' - defaulting to 'https://'")
         long_url = "https://" + long_url
 
-    db_id = hash(long_url)
-    db_id += sys.maxsize + 1  # Must be positive
-    suid = base62encode(db_id)
+    url_hash = hash(long_url)
+    if url_hash < 0:
+        url_hash += sys.maxsize + 1  # Must be positive
+    suid = encode(url_hash)
+
+    try:
+        table.put_item(
+            Item={"ShortUrlId": str(suid), "LongUrl": long_url, "Clicks": 0},
+            ConditionExpression="attribute_not_exists(ShortUrlId)",
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            pass
+        else:
+            logger.error(e)
+            raise InternalServerError("Unexpected error during PutItem")
+    except Exception as e:
+        logger.error(e)
+        raise InternalServerError("Unexpected error during UpdateItem")
 
     logger.info(f"{suid}: {long_url}")
-
-    item = table.put_item(
-        Item={"ShortUrlId": str(suid), "LongUrl": long_url, "Clicks": 0},
-        ReturnValues="ALL_OLD",
-    )
-
-    logger.info(item)
-
     return {"short_url": f"https://{domain_name}/{suid}"}
 
 
 @app.get("/<suid>")
 def redirect(suid):
-    item = table.get_item(
-        Key={
-            "ShortUrlId": suid,
-        },
-        ProjectionExpression="LongUrl",
-    )
-
     try:
+        item = table.update_item(
+            Key={
+                "ShortUrlId": str(suid),
+            },
+            UpdateExpression="SET Clicks = Clicks + :val",
+            ExpressionAttributeValues={":val": {"N": "1"}},
+            ReturnValues="ALL_NEW",
+        )
         long_url = item["Item"]["LongUrl"]
+
         return Response(
             status_code=302,
             body=json.dumps({"redirecting": long_url}),
             content_type="application/json",
             headers={"Location": long_url},
         )
-    except KeyError:
-        raise NotFoundError("Could not find short URL")
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            raise NotFoundError("Could not find short URL")
+        else:
+            logger.error(e)
+            raise InternalServerError("Unexpected error during UpdateItem")
+    except Exception as e:
+        logger.error(e)
+        raise InternalServerError("Unexpected error during UpdateItem")
 
 
 @app.get("/")
