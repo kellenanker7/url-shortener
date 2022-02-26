@@ -19,6 +19,7 @@ provider:
           Action:
             - dynamodb:GetItem*
             - dynamodb:PutItem*
+            - dynamodb:UpdateItem*
           Resource:
             - !GetAtt UrlTable.Arn
 

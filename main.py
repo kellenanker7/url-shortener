@@ -28,6 +28,7 @@ domain_name = os.environ.get("DOMAIN_NAME")
 chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 base = len(chars)
 
+
 def encode(value):
     suid = ""
     while value > 0:
@@ -68,7 +69,7 @@ def shorten():
             pass
         else:
             logger.error(e)
-            raise InternalServerError("Unexpected error during PutItem")
+            raise BadRequestError("Bad PutItem request")
     except Exception as e:
         logger.error(e)
         raise InternalServerError("Unexpected error during UpdateItem")
@@ -84,11 +85,13 @@ def redirect(suid):
             Key={
                 "ShortUrlId": str(suid),
             },
-            UpdateExpression="SET Clicks = Clicks + :val",
-            ExpressionAttributeValues={":val": {"N": "1"}},
+            ConditionExpression="attribute_exists(ShortUrlId)",
+            UpdateExpression="SET #Clicks = #Clicks + :val",
+            ExpressionAttributeNames={"#Clicks": "Clicks"},
+            ExpressionAttributeValues={":val": 1},
             ReturnValues="ALL_NEW",
         )
-        long_url = item["Item"]["LongUrl"]
+        long_url = item["Attributes"]["LongUrl"]
 
         return Response(
             status_code=302,
@@ -97,11 +100,11 @@ def redirect(suid):
             headers={"Location": long_url},
         )
     except ClientError as e:
-        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
             raise NotFoundError("Could not find short URL")
         else:
             logger.error(e)
-            raise InternalServerError("Unexpected error during UpdateItem")
+            raise BadRequestError("Bad UpdateItem request")
     except Exception as e:
         logger.error(e)
         raise InternalServerError("Unexpected error during UpdateItem")
