@@ -58,16 +58,20 @@ functions:
 
 custom:
   customDomain:
-    domainName: short.kellenanker.com
+    domainName: kell.link
     basePath: ''
     stage: live
     createRoute53Record: true
-    certificateName: '*.kellenanker.com'
+    certificateName: 'kell.link'
     autoDomain: true
     autoDomainWaitFor: 300
     endpointType: regional
     securityPolicy: tls_1_2
     apiType: http
+
+  customCertificate:
+    certificateName: kell.link
+    hostedZoneNames: kell.link.
 
   pythonRequirements:
     layer: true
@@ -75,6 +79,7 @@ custom:
 plugins:
   - serverless-python-requirements
   - serverless-domain-manager
+  - serverless-certificate-creator
 
 resources:
   Resources:
