@@ -38,14 +38,13 @@ functions:
       PYTHONHASHSEED: 0
 
     events:
+      # Shorten
       - httpApi:
-          path: '/status'
+          path: '/'
           method: GET
+      # Redirect
       - httpApi:
-          path: '/shorten'
-          method: GET
-      - httpApi:
-          path: '/s/{param}'
+          path: '/{param}'
           method: GET
 
     layers:
