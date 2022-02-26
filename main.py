@@ -1,10 +1,12 @@
 import logging
 import boto3
+import json
 
 from aws_lambda_powertools.logging import Logger
 from aws_lambda_powertools.event_handler.api_gateway import (
     ApiGatewayResolver,
     ProxyEventType,
+    Response,
 )
 from aws_lambda_powertools.event_handler.exceptions import (
     BadRequestError,
@@ -14,38 +16,28 @@ from aws_lambda_powertools.event_handler.exceptions import (
     UnauthorizedError,
 )
 
-ddb_table = "url-shortener"
 
 logger = Logger(level=logging.INFO)
 app = ApiGatewayResolver(proxy_type=ProxyEventType.APIGatewayProxyEventV2)
 
-ddb_client = boto3.client("dynamodb")
+dynamodb = boto3.resource("dynamodb")
+table = dynamodb.Table("url-shortener")
 
 
-def gen_id(long_url):
-    short_url_id = hash(long_url)  # Do things to generate id
-    logger.info(short_url_id)
+def put_item(long_url):
+    suid = hash(long_url)
+    logger.info(suid)
 
-    resp = ddb_client.get_item(
-        TableName=ddb_table,
-        Key={
-            "ShortUrlId": {"S": str(short_url_id)},
-        },
+    response = table.put_item(
+        Item={
+            "ShortUrlId": str(suid),
+            "LongUrl": long_url,
+            # "TTL": foo
+        }
     )
+    logger.info(response["ResponseMetadata"]["HTTPStatusCode"])
 
-    logger.info(resp)
-
-    if resp == "":
-        ddb_client.put_item(
-            TableName=ddb_table,
-            Item={
-                "ShortUrlId": {"S": short_url_id},
-                "LongUrl": long_url,
-                # "TTL": somevalue,
-            },
-        )
-
-    return short_url_id
+    return suid
 
 
 @app.get("/shorten")
@@ -54,31 +46,35 @@ def shorten():
         name="longUrl", default_value=""
     )
     if long_url == "":
-        return BadRequestError("Missing longUrl query parameter")
+        raise BadRequestError("Missing longUrl query parameter")
 
-    return {"id": gen_id(long_url)}
+    return Response(
+        status_code=200,
+        body=json.dumps({"suid": put_item(long_url)}),
+        content_type="application/json",
+    )
 
 
-@app.get("/s/<sid>")
-def redirect(sid):
-    long_url = ddb_client.get_item(
-        TableName=ddb_table,
+@app.get("/s/<suid>")
+def redirect(suid):
+    item = table.get_item(
         Key={
-            "ShortUrlId": {"S": short_url_id},
+            "ShortUrlId": suid,
         },
     )
 
-    logger.info(long_url)
+    try:
+        long_url = item["Item"]["LongUrl"]
+        logger.info(long_url)
 
-    if long_url == "":
-        return BadRequestError("Invalid short URL. Has that short URL expired?")
-
-    return Response(
-        status_code=302,
-        body="redirecting...",
-        content_type="text/plain",
-        headers={"Location": long_url},
-    )
+        return Response(
+            status_code=302,
+            body="redirecting...",
+            content_type="text/plain",
+            headers={"Location": long_url},
+        )
+    except KeyError as ignore:
+        raise BadRequestError("Bad short URL. Has that short URL expired?")
 
 
 @app.get("/status")

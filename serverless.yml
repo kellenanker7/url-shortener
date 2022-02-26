@@ -9,15 +9,14 @@ provider:
   region: us-east-1
   logs:
     httpApi: true
+  httpApi:
+    disableDefaultEndpoint: true
 
   iam:
     role:
       statements:
         - Effect: Allow
           Action:
-            - dynamodb:Scan
-            - dynamodb:Describe*
-            - dynamodb:List*
             - dynamodb:GetItem*
             - dynamodb:PutItem*
           Resource:
@@ -34,6 +33,9 @@ functions:
     handler: main.api_handler
     memorySize: 256
     timeout: 29
+
+    environment:
+      PYTHONHASHSEED: 0
 
     events:
       - httpApi:
