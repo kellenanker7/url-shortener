@@ -7,12 +7,13 @@ provider:
   runtime: python3.9
   stage: live
   region: us-east-1
-  logs:
-    httpApi: true
   httpApi:
     disableDefaultEndpoint: true
     cors:
-      allowedOrigins: 'https://url-shortener.kellenanker.com'
+      allowedOrigins:
+        - 'https://url-shortener.kellenanker.com'
+        - 'http://localhost:3000'
+        - 'http://localhost:80'
       allowedHeaders: '*'
       allowCredentials: false
       maxAge: 300
@@ -22,9 +23,9 @@ provider:
       statements:
         - Effect: Allow
           Action:
-            - dynamodb:GetItem*
-            - dynamodb:PutItem*
-            - dynamodb:UpdateItem*
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
             - dynamodb:Query
             - dynamodb:Scan
           Resource:

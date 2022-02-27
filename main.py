@@ -43,14 +43,9 @@ def encode(value):
 @app.post("/")
 def shorten():
     try:
-        event = app.current_event.json_body
+        long_url = app.current_event.json_body["longUrl"]
     except:
         raise BadRequestError("Invalid JSON payload")
-
-    try:
-        long_url = event["longUrl"]
-    except KeyError:
-        raise BadRequestError("Missing 'longUrl' attribute in payload")
 
     if len(long_url.split("://")) < 2:
         logger.warning("No protocol found in 'longUrl' - defaulting to 'https://'")
@@ -120,8 +115,30 @@ def redirect(suid):
 
 @app.get("/")
 def metrics():
-    return {"message": "Metrics coming soon"}
+    try:
+        search_days = int(app.current_event.query_string_parameters["days"])
+        limit = int(app.current_event.query_string_parameters["limit"])
+    except:
+        raise BadRequestError("Missing or invalid required query parameter(s)")
+
+    now = int(time.time())
+    then = now - (search_days * 24 * 60 * 60)
+
+    return {
+        "items": table.scan(
+            FilterExpression="#Timestamp BETWEEN :then AND :now",
+            ExpressionAttributeValues={
+                ":then": then,
+                ":now": now,
+            },
+            ExpressionAttributeNames={"#Timestamp": "Timestamp"},
+            ReturnConsumedCapacity="NONE",
+            Limit=100 if limit > 100 else limit,
+        )["Items"]
+    }
 
 
 def api_handler(event, context):
+    logger.debug(event)
+    logger.debug(context)
     return app.resolve(event, context)
