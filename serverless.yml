@@ -11,6 +11,11 @@ provider:
     httpApi: true
   httpApi:
     disableDefaultEndpoint: true
+    cors:
+      allowedOrigins: 'https://url-shortener.kellenanker.com'
+      allowedHeaders: '*'
+      allowCredentials: false
+      maxAge: 300
 
   iam:
     role:
@@ -20,6 +25,8 @@ provider:
             - dynamodb:GetItem*
             - dynamodb:PutItem*
             - dynamodb:UpdateItem*
+            - dynamodb:Query
+            - dynamodb:Scan
           Resource:
             - !GetAtt UrlTable.Arn
 
@@ -36,8 +43,8 @@ functions:
     timeout: 29
 
     environment:
-      PYTHONHASHSEED: 0
-      DOMAIN_NAME: "${self:custom.customDomain.domainName}"
+      DOMAIN_NAME: '${self:custom.customDomain.domainName}'
+      DDB_TABLE: !Ref UrlTable
 
     events:
       # Shorten
@@ -57,12 +64,14 @@ functions:
       - Ref: PythonRequirementsLambdaLayer
 
 custom:
+  domainName: kell.link
+
   customDomain:
-    domainName: kell.link
+    domainName: ${self:custom.domainName}
     basePath: ''
     stage: live
     createRoute53Record: true
-    certificateName: 'kell.link'
+    certificateName: ${self:custom.domainName}
     autoDomain: true
     autoDomainWaitFor: 300
     endpointType: regional
@@ -70,8 +79,8 @@ custom:
     apiType: http
 
   customCertificate:
-    certificateName: kell.link
-    hostedZoneNames: kell.link.
+    certificateName: ${self:custom.domainName}
+    hostedZoneNames: ${self:custom.domainName}.
 
   pythonRequirements:
     layer: true
@@ -86,14 +95,18 @@ resources:
     UrlTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: url-shortener
+        TableName: short-urls
         AttributeDefinitions:
           - AttributeName: ShortUrlId
             AttributeType: S
+          - AttributeName: Timestamp
+            AttributeType: N
         KeySchema:
           - AttributeName: ShortUrlId
             KeyType: HASH
+          - AttributeName: Timestamp
+            KeyType: RANGE
         BillingMode: PAY_PER_REQUEST
         TimeToLiveSpecification:
           AttributeName: TTL
-          Enabled: False
+          Enabled: True
