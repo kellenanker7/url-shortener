@@ -138,14 +138,13 @@ def redirect(suid):
 @app.get("/")
 def metrics():
     try:
-        days = int(app.current_event.query_string_parameters["days"])
+        days = int(app.current_event.get_query_string_value("days"))
     except:
         raise BadRequestError("Missing or invalid 'days' query parameter")
 
-    limit = app.current_event.query_string_parameters.get("limit", default=25)
-
-    if limit > 100:
-        limit = 100
+    limit = app.current_event.get_query_string_value("limit", default_value=100)
+    if limit > 1000:
+        limit = 1000
 
     now = int(time.time() * 10**6)
     then = now - (days * 24 * 60 * 60 * 10**6)
@@ -159,6 +158,7 @@ def metrics():
         ExpressionAttributeNames={"#CreateTime": "CreateTime"},
         ReturnConsumedCapacity="NONE",
         Limit=limit,
+        ProjectionExpression="LongUrl,CreateTime,ClickCount",
     )["Items"]
 
 
