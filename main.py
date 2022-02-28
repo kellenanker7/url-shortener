@@ -28,7 +28,7 @@ table = dynamodb.Table(os.environ.get("DDB_TABLE"))
 domain_name = os.environ.get("DOMAIN_NAME")
 
 chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
+ttl_days = 365
 
 # https://stackoverflow.com/a/1119769
 def encode(num):
@@ -62,20 +62,22 @@ def decode(string):
 
 @app.post("/")
 def shorten():
+    warnings = {}
+
     try:
         long_url = app.current_event.json_body["longUrl"]
     except:
         raise BadRequestError("Invalid JSON payload")
 
     if len(long_url.split("://")) < 2:
+        warnings = {"warnings": "No protocol found, defaulting to http"}
         long_url = f"http://{long_url}"
 
     # encode(550731776) = baaaaa (smallest input that generates output length 6)
     # encode(30840979455) = 999999 (largest input that generates output length 6)
     # 30,840,979,455 - 550,731,776 = 30,290,247,679 < 62^6 = 56,800,235,584
     # So, for encode() the number of possible inputs < num of possible outputs
-    # We're also expiring items after 365 days.
-    # I hope we don't generate 56,800,235,584 short URLs every year :)
+    # For the sake of my bank account, I hope we don't generate 56,800,235,584 short URLs :)
     ddb_id = random.randint(550731776, 30840979455)
     suid = encode(ddb_id)
 
@@ -88,7 +90,7 @@ def shorten():
                 "CreateTime": now,
                 "ShortUrlId": str(suid),
                 "ClickCount": 0,
-                "TTL": now + (365 * 24 * 60 * 60),  # one year from now
+                "TTL": now + (ttl_days * 24 * 60 * 60),
             },
         )
     except Exception as e:
@@ -96,7 +98,7 @@ def shorten():
         raise InternalServerError("Unexpected error during PutItem")
 
     logger.info(f"{suid}: {long_url}")
-    return {"short_url": f"https://{domain_name}/{suid}"}
+    return {"short_url": f"https://{domain_name}/{suid}"} | warnings
 
 
 @app.get("/<suid>")
@@ -137,29 +139,41 @@ def redirect(suid):
 
 @app.get("/")
 def metrics():
+    warnings = {}
+
+    if "status" in app.current_event.query_string_parameters:
+        return {"status": "alive"}
+
     try:
         days = int(app.current_event.get_query_string_value("days"))
+        limit = int(
+            app.current_event.get_query_string_value("limit", default_value=100)
+        )
+        if limit > 1000:
+            warnings = {"warnings": "Limit too large, using 1000"}
+            limit = 1000
     except:
-        raise BadRequestError("Missing or invalid 'days' query parameter")
+        raise BadRequestError("Missing or invalid query")
 
-    limit = app.current_event.get_query_string_value("limit", default_value=100)
-    if limit > 1000:
-        limit = 1000
+    if days < 1:
+        raise BadRequestError("Days must be positive integer")
 
     now = int(time.time() * 10**6)
     then = now - (days * 24 * 60 * 60 * 10**6)
 
-    return table.scan(
-        FilterExpression="#CreateTime BETWEEN :then AND :now",
-        ExpressionAttributeValues={
-            ":then": then,
-            ":now": now,
-        },
-        ExpressionAttributeNames={"#CreateTime": "CreateTime"},
-        ReturnConsumedCapacity="NONE",
-        Limit=limit,
-        ProjectionExpression="LongUrl,CreateTime,ClickCount",
-    )["Items"]
+    return {
+        "items": table.scan(
+            FilterExpression="#CreateTime BETWEEN :then AND :now",
+            ExpressionAttributeValues={
+                ":then": then,
+                ":now": now,
+            },
+            ExpressionAttributeNames={"#CreateTime": "CreateTime"},
+            ReturnConsumedCapacity="NONE",
+            Limit=limit,
+            ProjectionExpression="LongUrl,CreateTime,ClickCount",
+        )["Items"]
+    } | warnings
 
 
 def api_handler(event, context):

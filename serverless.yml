@@ -109,4 +109,4 @@ resources:
         BillingMode: PAY_PER_REQUEST
         TimeToLiveSpecification:
           AttributeName: TTL
-          Enabled: True
+          Enabled: False
