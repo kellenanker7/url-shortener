@@ -66,6 +66,7 @@ def shorten():
 
     try:
         long_url = app.current_event.json_body["longUrl"]
+        assert long_url
     except:
         raise BadRequestError("Invalid JSON payload")
 
@@ -158,17 +159,17 @@ def metrics():
 
     try:
         days = int(app.current_event.get_query_string_value("days"))
+        assert days > 0
+
         limit = int(
             app.current_event.get_query_string_value("limit", default_value=100)
         )
         if limit > 1000:
             warnings = {"warnings": "Limit too large, using 1000"}
             limit = 1000
+
     except:
         raise BadRequestError("Missing or invalid query")
-
-    if days < 1:
-        raise BadRequestError("Days must be positive integer")
 
     now = int(time.time() * 10**6)
     then = now - (days * 24 * 60 * 60 * 10**6)
