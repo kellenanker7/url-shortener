@@ -28,16 +28,36 @@ table = dynamodb.Table(os.environ.get("DDB_TABLE"))
 domain_name = os.environ.get("DOMAIN_NAME")
 
 chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-base = len(chars)
 
 
-def encode(value):
-    suid = ""
-    while value > 0:
-        suid += chars[value % base]
-        value //= base
+# https://stackoverflow.com/a/1119769
+def encode(num):
+    if num == 0:
+        return chars[0]
 
-    return suid
+    arr = []
+    arr_append = arr.append  # Extract bound-method for faster access.
+    _divmod = divmod  # Access to locals is faster.
+
+    while num:
+        num, rem = _divmod(num, 62)
+        arr_append(chars[rem])
+
+    arr.reverse()
+    return "".join(arr)
+
+
+def decode(string):
+    strlen = len(string)
+    num = 0
+    idx = 0
+
+    for char in string:
+        power = strlen - (idx + 1)
+        num += chars.index(char) * (62**power)
+        idx += 1
+
+    return num
 
 
 @app.post("/")
@@ -48,26 +68,26 @@ def shorten():
         raise BadRequestError("Invalid JSON payload")
 
     if len(long_url.split("://")) < 2:
-        logger.warning("No protocol found in 'longUrl' - defaulting to 'https://'")
-        long_url = "https://" + long_url
+        long_url = f"http://{long_url}"
 
     # encode(550731776) = baaaaa (smallest input that generates output length 6)
     # encode(30840979455) = 999999 (largest input that generates output length 6)
     # 30,840,979,455 - 550,731,776 = 30,290,247,679 < 62^6 = 56,800,235,584
     # So, for encode() the number of possible inputs < num of possible outputs
-    # We should never hit any collisions. We're also expiring items after 365 days.
+    # We're also expiring items after 365 days.
     # I hope we don't generate 56,800,235,584 short URLs every year :)
-    uid = random.randint(550731776, 30840979455)
-    suid = encode(uid)
+    ddb_id = random.randint(550731776, 30840979455)
+    suid = encode(ddb_id)
 
     try:
-        now = int(time.time())
+        now = int(time.time() * 10**6)
         table.put_item(
             Item={
-                "ShortUrlId": str(suid),
+                "Id": ddb_id,
                 "LongUrl": long_url,
-                "Clicks": 0,
-                "Timestamp": now,
+                "CreateTime": now,
+                "ShortUrlId": str(suid),
+                "ClickCount": 0,
                 "TTL": now + (365 * 24 * 60 * 60),  # one year from now
             },
         )
@@ -81,21 +101,23 @@ def shorten():
 
 @app.get("/<suid>")
 def redirect(suid):
+    ddb_id = decode(suid)
+
     try:
-        # https://stackoverflow.com/a/60064828
         item = table.query(
-            KeyConditionExpression="#ShortUrlId = :val",
-            ExpressionAttributeNames={"#ShortUrlId": "ShortUrlId"},
-            ExpressionAttributeValues={":val": str(suid)},
+            KeyConditionExpression="#Id = :val",
+            ExpressionAttributeNames={"#Id": "Id"},
+            ExpressionAttributeValues={":val": ddb_id},
             Limit=1,
         )["Items"][0]
 
         long_url = item["LongUrl"]
+
         table.update_item(
-            Key={"ShortUrlId": str(suid), "Timestamp": item["Timestamp"]},
-            ConditionExpression="attribute_exists(ShortUrlId)",
-            UpdateExpression="SET #Clicks = #Clicks + :val",
-            ExpressionAttributeNames={"#Clicks": "Clicks"},
+            Key={"Id": ddb_id, "CreateTime": item["CreateTime"]},
+            ConditionExpression="attribute_exists(LongUrl)",
+            UpdateExpression="SET #ClickCount = #ClickCount + :val",
+            ExpressionAttributeNames={"#ClickCount": "ClickCount"},
             ExpressionAttributeValues={":val": 1},
         )
 
@@ -116,26 +138,28 @@ def redirect(suid):
 @app.get("/")
 def metrics():
     try:
-        search_days = int(app.current_event.query_string_parameters["days"])
-        limit = int(app.current_event.query_string_parameters["limit"])
+        days = int(app.current_event.query_string_parameters["days"])
     except:
-        raise BadRequestError("Missing or invalid required query parameter(s)")
+        raise BadRequestError("Missing or invalid 'days' query parameter")
 
-    now = int(time.time())
-    then = now - (search_days * 24 * 60 * 60)
+    limit = app.current_event.query_string_parameters.get("limit", default=25)
 
-    return {
-        "items": table.scan(
-            FilterExpression="#Timestamp BETWEEN :then AND :now",
-            ExpressionAttributeValues={
-                ":then": then,
-                ":now": now,
-            },
-            ExpressionAttributeNames={"#Timestamp": "Timestamp"},
-            ReturnConsumedCapacity="NONE",
-            Limit=100 if limit > 100 else limit,
-        )["Items"]
-    }
+    if limit > 100:
+        limit = 100
+
+    now = int(time.time() * 10**6)
+    then = now - (days * 24 * 60 * 60 * 10**6)
+
+    return table.scan(
+        FilterExpression="#CreateTime BETWEEN :then AND :now",
+        ExpressionAttributeValues={
+            ":then": then,
+            ":now": now,
+        },
+        ExpressionAttributeNames={"#CreateTime": "CreateTime"},
+        ReturnConsumedCapacity="NONE",
+        Limit=limit,
+    )["Items"]
 
 
 def api_handler(event, context):

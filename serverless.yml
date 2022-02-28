@@ -13,7 +13,6 @@ provider:
       allowedOrigins:
         - 'https://url-shortener.kellenanker.com'
         - 'http://localhost:3000'
-        - 'http://localhost:80'
       allowedHeaders: '*'
       allowCredentials: false
       maxAge: 300
@@ -96,16 +95,16 @@ resources:
     UrlTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: short-urls
+        TableName: url-shortener
         AttributeDefinitions:
-          - AttributeName: ShortUrlId
-            AttributeType: S
-          - AttributeName: Timestamp
+          - AttributeName: Id
+            AttributeType: N
+          - AttributeName: CreateTime
             AttributeType: N
         KeySchema:
-          - AttributeName: ShortUrlId
+          - AttributeName: Id
             KeyType: HASH
-          - AttributeName: Timestamp
+          - AttributeName: CreateTime
             KeyType: RANGE
         BillingMode: PAY_PER_REQUEST
         TimeToLiveSpecification:
