@@ -142,7 +142,16 @@ def metrics():
     warnings = {}
 
     if "status" in app.current_event.query_string_parameters:
-        return {"status": "alive"}
+        items = table.scan(
+            ReturnConsumedCapacity="NONE",
+            ProjectionExpression="ClickCount",
+        )["Items"]
+
+        total_click_count = 0
+        for i in items:
+            total_click_count += i["ClickCount"]
+
+        return {"total_click_count": total_click_count, "total_url_count": len(items)}
 
     try:
         days = int(app.current_event.get_query_string_value("days"))
