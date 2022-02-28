@@ -51,10 +51,18 @@ functions:
       - httpApi:
           path: '/'
           method: POST
+
       # Metrics
       - httpApi:
-          path: '/'
+          path: '/api/status'
           method: GET
+      - httpApi:
+          path: '/api/search'
+          method: GET
+      - httpApi:
+          path: '/api/clicks'
+          method: GET
+
       # Redirect
       - httpApi:
           path: '/{param}'

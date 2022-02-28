@@ -17,6 +17,7 @@ from aws_lambda_powertools.event_handler.exceptions import (
     BadRequestError,
     InternalServerError,
     NotFoundError,
+    UnauthorizedError,
 )
 
 
@@ -36,12 +37,12 @@ def encode(num):
         return chars[0]
 
     arr = []
-    arr_append = arr.append  # Extract bound-method for faster access.
+    _append = arr.append  # Extract bound-method for faster access.
     _divmod = divmod  # Access to locals is faster.
 
     while num:
         num, rem = _divmod(num, 62)
-        arr_append(chars[rem])
+        _append(chars[rem])
 
     arr.reverse()
     return "".join(arr)
@@ -58,6 +59,36 @@ def decode(string):
         idx += 1
 
     return num
+
+
+def clicks_for_value(attr, val):
+    items = table.scan(
+        ReturnConsumedCapacity="NONE",
+        ProjectionExpression=f"{attr},ClickCount",
+        FilterExpression=f"#{attr} = :{attr}",
+        ExpressionAttributeValues={f":{attr}": val},
+        ExpressionAttributeNames={f"#{attr}": attr},
+    )["Items"]
+
+    clicks = 0
+    for i in items:
+        clicks += i["ClickCount"]
+
+    return clicks
+
+
+def all_clicks_by_attr(items, attr):
+    result = {}
+    for i in items:
+        value = i[attr]
+        clicks = i["ClickCount"]
+
+        if value not in result:
+            result[value] = clicks
+        else:
+            result[value] += clicks
+
+    return result
 
 
 @app.post("/")
@@ -138,55 +169,77 @@ def redirect(suid):
         raise InternalServerError("Unexpected error during UpdateItem")
 
 
-@app.get("/")
-def metrics():
-    warnings = {}
+@app.get("/api/status")
+def status():
+    return {"status": "alive"}
 
-    if (
-        not app.current_event.query_string_parameters
-        or "status" in app.current_event.query_string_parameters
-    ):
-        items = table.scan(
-            ReturnConsumedCapacity="NONE",
-            ProjectionExpression="ClickCount",
-        )["Items"]
 
-        total_click_count = 0
-        for i in items:
-            total_click_count += i["ClickCount"]
-
-        return {"total_click_count": total_click_count, "total_url_count": len(items)}
+@app.get("/api/clicks")
+def clicks():
+    suid = None
+    long_url = None
 
     try:
-        days = int(app.current_event.get_query_string_value("days"))
-        assert days > 0
-
-        limit = int(
-            app.current_event.get_query_string_value("limit", default_value=100)
-        )
-        if limit > 1000:
-            warnings = {"warnings": "Limit too large, using 1000"}
-            limit = 1000
-
+        token = app.current_event.headers["x-kellink-token"]
+        assert token == "let-me-in"
     except:
-        raise BadRequestError("Missing or invalid query")
+        raise UnauthorizedError("Invalid or missing API token")
+
+    try:
+        suid = app.current_event.query_string_parameters["suid"]
+    except:
+        pass
+    try:
+        long_url = app.current_event.query_string_parameters["long_url"]
+    except:
+        pass
+
+    if suid or long_url:
+        quick_results = {}
+        if suid:
+            quick_results[suid] = clicks_for_value("ShortUrlId", suid)
+        if long_url:
+            quick_results[long_url] = clicks_for_value("LongUrl", long_url)
+        return quick_results
+
+    items = table.scan(
+        ReturnConsumedCapacity="NONE",
+        ProjectionExpression="ShortUrlId,LongUrl,ClickCount",
+    )["Items"]
+
+    return {
+        "clicks_by_suid": all_clicks_by_attr(items, "ShortUrlId"),
+        "click_by_long_url": all_clicks_by_attr(items, "LongUrl"),
+    }
+
+
+@app.get("/api/search")
+def metrics():
+    try:
+        token = app.current_event.headers["x-kellink-token"]
+        assert token == "let-me-in"
+    except:
+        raise UnauthorizedError("Invalid or missing API token")
+
+    try:
+        days = int(app.current_event.query_string_parameters["days"])
+        assert days > 0 and days < 365
+    except:
+        raise BadRequestError("Query must be integer in range [1,365]")
 
     now = int(time.time() * 10**6)
     then = now - (days * 24 * 60 * 60 * 10**6)
 
-    return {
-        "items": table.scan(
-            FilterExpression="#CreateTime BETWEEN :then AND :now",
-            ExpressionAttributeValues={
-                ":then": then,
-                ":now": now,
-            },
-            ExpressionAttributeNames={"#CreateTime": "CreateTime"},
-            ReturnConsumedCapacity="NONE",
-            Limit=limit,
-            ProjectionExpression="LongUrl,CreateTime,ClickCount",
-        )["Items"]
-    } | warnings
+    return table.scan(
+        FilterExpression="#CreateTime BETWEEN :then AND :now",
+        ExpressionAttributeValues={
+            ":then": then,
+            ":now": now,
+        },
+        ExpressionAttributeNames={"#CreateTime": "CreateTime"},
+        ReturnConsumedCapacity="NONE",
+        ProjectionExpression="CreateTime,LongUrl,ClickCount",
+    )["Items"]
 
 
 def api_handler(event, context):
