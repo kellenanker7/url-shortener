@@ -141,7 +141,10 @@ def redirect(suid):
 def metrics():
     warnings = {}
 
-    if "status" in app.current_event.query_string_parameters:
+    if (
+        not app.current_event.query_string_parameters
+        or "status" in app.current_event.query_string_parameters
+    ):
         items = table.scan(
             ReturnConsumedCapacity="NONE",
             ProjectionExpression="ClickCount",
