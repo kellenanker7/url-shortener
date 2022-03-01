@@ -28,22 +28,22 @@ table = dynamodb.Table(os.environ.get("DDB_TABLE"))
 domain_name = os.environ.get("DOMAIN_NAME")
 
 chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+base = len(chars)
+
 
 # https://stackoverflow.com/a/1119769
 def encode(num):
     if num == 0:
         return chars[0]
 
-    arr = []
-    _append = arr.append  # Extract bound-method for faster access.
+    res = ""
     _divmod = divmod  # Access to locals is faster.
 
     while num:
-        num, rem = _divmod(num, 62)
-        _append(chars[rem])
+        num, rem = _divmod(num, base)
+        res += chars[rem]
 
-    arr.reverse()
-    return "".join(arr)
+    return res[::-1]
 
 
 def decode(string):
@@ -53,7 +53,7 @@ def decode(string):
 
     for char in string:
         power = strlen - (idx + 1)
-        num += chars.index(char) * (62**power)
+        num += chars.index(char) * (base**power)
         idx += 1
 
     return num
@@ -103,14 +103,12 @@ def shorten():
         warnings = {"warnings": "No protocol found, defaulting to http"}
         long_url = f"http://{long_url}"
 
-    # encode(550731776) = baaaaa (smallest input that generates output length 6)
-    # encode(30840979455) = 999999 (largest input that generates output length 6)
-    # 56,800,235,583 - 916,132,832 = 55,884,102,751 < 62^6 = 56,800,235,584
-    # So, for encode() the number of possible inputs < num of possible outputs
-    # random.seed(hash(long_url)) + PYTHONHASHSEED=0 ensures URL encodes to
-    # same suid each time
+    # 62^6 - 1 = decode(999999) = max value for ddb_id
+    # So, #possible IDs < #possible encodings
+    # random.seed(hash(long_url)) + PYTHONHASHSEED=0
+    # ensures URL encodes to same suid each time
     random.seed(hash(long_url))
-    ddb_id = random.randint(916132832, 56800235583)
+    ddb_id = random.randint(0, base**6 - 1)
     suid = encode(ddb_id)
 
     try:
