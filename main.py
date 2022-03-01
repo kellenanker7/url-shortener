@@ -3,7 +3,6 @@ import random
 import boto3
 import time
 import json
-import sys
 import os
 
 from botocore.exceptions import ClientError
@@ -29,7 +28,6 @@ table = dynamodb.Table(os.environ.get("DDB_TABLE"))
 domain_name = os.environ.get("DOMAIN_NAME")
 
 chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-ttl_days = 365
 
 # https://stackoverflow.com/a/1119769
 def encode(num):
@@ -107,10 +105,12 @@ def shorten():
 
     # encode(550731776) = baaaaa (smallest input that generates output length 6)
     # encode(30840979455) = 999999 (largest input that generates output length 6)
-    # 30,840,979,455 - 550,731,776 = 30,290,247,679 < 62^6 = 56,800,235,584
+    # 56,800,235,583 - 916,132,832 = 55,884,102,751 < 62^6 = 56,800,235,584
     # So, for encode() the number of possible inputs < num of possible outputs
-    # For the sake of my bank account, I hope we don't generate 56,800,235,584 short URLs :)
-    ddb_id = random.randint(550731776, 30840979455)
+    # random.seed(hash(long_url)) + PYTHONHASHSEED=0 ensures URL encodes to
+    # same suid each time
+    random.seed(hash(long_url))
+    ddb_id = random.randint(916132832, 56800235583)
     suid = encode(ddb_id)
 
     try:
@@ -122,7 +122,7 @@ def shorten():
                 "CreateTime": now,
                 "ShortUrlId": str(suid),
                 "ClickCount": 0,
-                "TTL": now + (ttl_days * 24 * 60 * 60),
+                "TTL": now + (365 * 24 * 60 * 60),
             },
         )
     except Exception as e:
@@ -209,7 +209,7 @@ def clicks():
 
     return {
         "clicks_by_suid": all_clicks_by_attr(items, "ShortUrlId"),
-        "click_by_long_url": all_clicks_by_attr(items, "LongUrl"),
+        "clicks_by_long_url": all_clicks_by_attr(items, "LongUrl"),
     }
 
 
