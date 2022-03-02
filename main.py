@@ -221,7 +221,7 @@ def search():
 
     try:
         days = int(app.current_event.query_string_parameters["days"])
-        assert days > 0 and days < 365
+        assert days > 0 and days <= 365
     except:
         raise BadRequestError("Query must be integer in range [1,365]")
 
