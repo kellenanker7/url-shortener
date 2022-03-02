@@ -98,6 +98,8 @@ custom:
     certificateName: ${self:custom.domainName}
     hostedZoneNames: ${self:custom.domainName}.
 
+  logRetentionInDays: 7
+
   pythonRequirements:
     layer: true
 
@@ -105,6 +107,7 @@ plugins:
   - serverless-python-requirements
   - serverless-domain-manager
   - serverless-certificate-creator
+  - serverless-plugin-log-retention
 
 resources:
   Resources:
