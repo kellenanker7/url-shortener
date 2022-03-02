@@ -212,7 +212,7 @@ def clicks():
 
 
 @app.get("/api/search")
-def metrics():
+def search():
     try:
         token = app.current_event.headers["x-kellink-token"]
         assert token == "let-me-in"
@@ -243,4 +243,5 @@ def metrics():
 def api_handler(event, context):
     logger.debug(event)
     logger.debug(context)
-    return app.resolve(event, context)
+
+    return True if "warmer" in event else app.resolve(event, context)

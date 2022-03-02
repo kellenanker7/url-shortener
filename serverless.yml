@@ -48,6 +48,13 @@ functions:
       DDB_TABLE: !Ref UrlTable
 
     events:
+      - schedule:
+          name: url-shortener-warmer
+          description: Keep url-shortener warm
+          rate: rate(5 minutes)
+          input:
+            warmer: "yes"
+
       # Shorten
       - httpApi:
           path: '/'
