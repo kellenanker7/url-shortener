@@ -48,6 +48,7 @@ functions:
       DDB_TABLE: !Ref UrlTable
 
     events:
+      # Warmer
       - schedule:
           name: url-shortener-warmer
           description: Keep url-shortener warm
