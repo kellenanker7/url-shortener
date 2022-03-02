@@ -2,7 +2,6 @@ import logging
 import random
 import boto3
 import time
-import json
 import os
 
 from botocore.exceptions import ClientError
@@ -94,10 +93,17 @@ def shorten():
     warnings = {}
 
     try:
-        long_url = app.current_event.json_body["longUrl"]
+        long_url = app.current_event.json_body["longUrl"].strip()
         assert long_url
-    except:
+    except (AssertionError, KeyError) as e:
+        logger.error(e)
         raise BadRequestError("Invalid JSON payload")
+
+    try:
+        int(long_url)
+        raise BadRequestError("Invalid longUrl")
+    except ValueError:
+        pass
 
     if len(long_url.split("://")) < 2:
         warnings = {"warnings": "No protocol found, defaulting to http"}
@@ -111,23 +117,19 @@ def shorten():
     ddb_id = random.randint(0, base**6 - 1)
     suid = encode(ddb_id)
 
-    try:
-        now = int(time.time() * 10**6)
-        table.put_item(
-            Item={
-                "Id": ddb_id,
-                "LongUrl": long_url,
-                "CreateTime": now,
-                "ShortUrlId": str(suid),
-                "ClickCount": 0,
-                "TTL": now + (365 * 24 * 60 * 60),
-            },
-        )
-    except Exception as e:
-        logger.error(e)
-        raise InternalServerError("Unexpected error during PutItem")
+    now = int(time.time() * 10**6)
+    table.put_item(
+        Item={
+            "Id": ddb_id,
+            "LongUrl": long_url,
+            "CreateTime": now,
+            "ShortUrlId": str(suid),
+            "ClickCount": 0,
+            "TTL": now + (365 * 24 * 60 * 60),
+        },
+    )
 
-    logger.info(f"{suid}: {long_url}")
+    logger.info(f"Encoded {long_url} into {suid}")
     return {"short_url": f"https://{domain_name}/{suid}"} | warnings
 
 
@@ -153,18 +155,16 @@ def redirect(suid):
             ExpressionAttributeValues={":val": 1},
         )
 
+        logger.info(f"Decoded {suid} into {long_url}")
         return Response(
             status_code=302,
-            body=json.dumps({"redirecting": long_url}),
-            content_type="application/json",
+            body="redirecting...",
+            content_type="text/plain",
             headers={"Location": long_url},
         )
     except IndexError as e:
+        logger.error(e)
         raise NotFoundError("Could not find short URL")
-        logger.error(e)
-    except Exception as e:
-        logger.error(e)
-        raise InternalServerError("Unexpected error during UpdateItem")
 
 
 @app.get("/api/status")
@@ -180,17 +180,12 @@ def clicks():
     try:
         token = app.current_event.headers["x-kellink-token"]
         assert token == "let-me-in"
-    except:
+    except (AssertionError, KeyError) as e:
+        logger.error(e)
         raise UnauthorizedError("Invalid or missing API token")
 
-    try:
-        suid = app.current_event.query_string_parameters["suid"]
-    except:
-        pass
-    try:
-        long_url = app.current_event.query_string_parameters["long_url"]
-    except:
-        pass
+    suid = app.current_event.get_query_string_value("suid", default_value="")
+    long_url = app.current_event.get_query_string_value("long_url", default_value="")
 
     if suid or long_url:
         quick_results = {}
@@ -216,13 +211,15 @@ def search():
     try:
         token = app.current_event.headers["x-kellink-token"]
         assert token == "let-me-in"
-    except:
+    except (AssertionError, KeyError) as e:
+        logger.error(e)
         raise UnauthorizedError("Invalid or missing API token")
 
     try:
         days = int(app.current_event.query_string_parameters["days"])
         assert days > 0 and days <= 365
-    except:
+    except (AssertionError, KeyError, ValueError) as e:
+        logger.error(e)
         raise BadRequestError("Query must be integer in range [1,365]")
 
     now = int(time.time() * 10**6)
@@ -243,5 +240,4 @@ def search():
 def api_handler(event, context):
     logger.debug(event)
     logger.debug(context)
-
     return True if "warmer" in event else app.resolve(event, context)
