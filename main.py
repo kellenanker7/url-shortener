@@ -174,12 +174,8 @@ def status():
 
 @app.get("/api/clicks")
 def clicks():
-    suid = None
-    long_url = None
-
     try:
-        token = app.current_event.headers["x-kellink-token"]
-        assert token == "let-me-in"
+        assert app.current_event.headers["x-kellink-token"] == "let-me-in"
     except (AssertionError, KeyError) as e:
         logger.error(e)
         raise UnauthorizedError("Invalid or missing API token")
@@ -209,8 +205,7 @@ def clicks():
 @app.get("/api/search")
 def search():
     try:
-        token = app.current_event.headers["x-kellink-token"]
-        assert token == "let-me-in"
+        assert app.current_event.headers["x-kellink-token"] == "let-me-in"
     except (AssertionError, KeyError) as e:
         logger.error(e)
         raise UnauthorizedError("Invalid or missing API token")
